@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Navigation } from '@/components/Navigation';
 import { Footer } from '@/components/Footer';
+import { useInteraction } from '@/lib/hooks/useInteraction';
 
 interface Room {
   id: string;
@@ -61,7 +62,7 @@ function AreaText({ value }: { value: string }) {
   );
 }
 
-function RoomCard({ room }: { room: Room }) {
+function RoomCard({ room, userId }: { room: Room; userId?: string }) {
   const imageUrl = firstImage(room);
   const price = room.priceText || (room.price ? `${room.price.toLocaleString('vi-VN')} đ/tháng` : 'Liên hệ');
   const area = room.areaText || room.area;
@@ -78,8 +79,19 @@ function RoomCard({ room }: { room: Room }) {
     ? 'bg-slate-900/90 text-white'
     : 'bg-white/90 text-orange-600';
 
+  const { logImpression, logClick } = useInteraction({ userId, roomId: room.id });
+
+  useEffect(() => {
+    // Log impression when card is visible
+    logImpression();
+  }, [logImpression]);
+
+  const handleClick = () => {
+    logClick();
+  };
+
   return (
-    <article className="group flex h-full flex-col">
+    <article className="group flex h-full flex-col" onClick={handleClick}>
       <div className="relative mb-4 aspect-[4/5] overflow-hidden rounded-xl bg-gray-200">
         <img
           className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -227,8 +239,17 @@ export default function RoomsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [queryReady, setQueryReady] = useState(false);
+  const [userId, setUserId] = useState<string | undefined>(undefined);
   const limit = 12;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  // Get userId from localStorage or session
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('userId');
+    if (storedUserId) {
+      setUserId(storedUserId);
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -599,7 +620,7 @@ export default function RoomsPage() {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {rooms.map((room) => (
                     <Link key={room.id} href={`/rooms/${room.id}`} className="block">
-                      <RoomCard room={room} />
+                      <RoomCard room={room} userId={userId} />
                     </Link>
                   ))}
                 </div>

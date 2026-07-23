@@ -11,8 +11,6 @@ def match_roommates(userId, roomId):
         return pd.DataFrame(columns=["roommate_id", "compatibility_score", "compatibility_reasons"])
     user = indexed_users_df.loc[userId]
     roommate_ids = get_roommates(roomId)
-
-
     rows = []
 
     for roommate_id in roommate_ids:

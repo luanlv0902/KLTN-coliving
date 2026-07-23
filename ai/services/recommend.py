@@ -67,7 +67,6 @@ def recommend_rooms(userId, top_k=10):
         
         # 2. Lấy điểm Collaborative Filtering tương ứng của phòng (mặc định 0.5 nếu là Cold Start)
         cf_score = cf_scores_dict.get(roomId, 0.5)
-
         user_budget_min = _safe_float(user.get("budget_min_vnd"), 3000000)
         user_budget_max = _safe_float(user.get("budget_max_vnd"), 15000000)
         room_minimum_budget = _safe_float(room.get("minimumBudget"), 5000000)
@@ -75,22 +74,26 @@ def recommend_rooms(userId, top_k=10):
         priority_social_environment = _safe_float(user.get("priority_social_environment"), 3)
         room_current_occupants = _safe_float(room.get("current_occupants"), 0)
         room_max_occupants = _safe_float(room.get("maxOccupants"), 1)
-
         # Tính toán các chỉ số tương đồng (Feature Engineering)
         row = {
-            "location_similarity": location_similarity(user["preferred_location_district_id"], room["districtId"]),
-            "budget_similarity": budget_similarity(user_budget_min, user_budget_max, room_minimum_budget),
-            "smoking_match": binary_match(user["accept_smoking_roommates"], room["allowSmoking"]),
+            "location_similarity": location_similarity(user["preferred_location_district_id"], 
+                                                       room["districtId"]),
+            "budget_similarity": budget_similarity(user_budget_min,
+                                                    user_budget_max, room_minimum_budget),
+            "smoking_match": binary_match(user["accept_smoking_roommates"], 
+                                          room["allowSmoking"]),
             "pet_match": binary_match(user["accept_pets"], room["allowPets"]),
-            "sleep_similarity": sleep_compatibility(user["lifestyle_archetype"], room["preferredSleepHabit"]),
-            "cleanliness_similarity": cleanliness_compatibility(priority_cleanliness, room["cleanlinessRequired"]),
-            "social_similarity": social_compatibility(priority_social_environment, room["noiseTolerance"], room["guestPolicy"]),
-            "guest_similarity": guest_tolerance_compatibility(priority_social_environment, room["guestPolicy"]),
+            "sleep_similarity": sleep_compatibility(user["lifestyle_archetype"],
+                                                     room["preferredSleepHabit"]),
+            "cleanliness_similarity": cleanliness_compatibility(priority_cleanliness, 
+                                                                room["cleanlinessRequired"]),
+            "social_similarity": social_compatibility(priority_social_environment,
+                                                       room["noiseTolerance"], room["guestPolicy"]),
+            "guest_similarity": guest_tolerance_compatibility(priority_social_environment,
+                                                               room["guestPolicy"]),
             "occupancy_ratio": occupancy_ratio(room_current_occupants, room_max_occupants),
-            
             # Đính kèm điểm Collaborative Filtering từ hành vi tương tác thực tế
             "cf_score": cf_score,
-            
             "roomId": room["roomId"],
             "title": room.get("title", "Phòng Coliving"),
             "districtId": room["districtId"],
@@ -103,9 +106,8 @@ def recommend_rooms(userId, top_k=10):
 
     recommend_df = pd.DataFrame(rows)
 
-    # 3. HÀM TÍNH ĐIỂM CHỦ YẾU DỰA TRÊN MÔ HÌNH FILE COLAB (HEURISTIC WEIGHTED)
     def calculate_row_score(row):
-        # Trọng số phân bổ ưu tiên chính xác theo cấu trúc mô hình file Colab Heuristic (Tổng = 1.0)
+        # Trọng số phân bổ ưu tiên chính xác theo cấu trúc mô hình file 
         weights = {
             "location_similarity": 0.15,
             "budget_similarity": 0.15,
@@ -116,12 +118,9 @@ def recommend_rooms(userId, top_k=10):
             "pet_match": 0.10,
             "occupancy_ratio": 0.10
         }
-        
         # Tính toán điểm Heuristic cơ bản
         colab_heuristic_score = sum(row.get(feat, 0.5) * weight for feat, weight in weights.items())
-
-        # CÔNG THỨC LAI GHÉP ƯU TIÊN PHÂN TÍCH LUẬN VĂN:
-        # 80% Điểm Heuristic cốt lõi (từ file Colab) + 20% Điểm Lọc cộng tác hành vi thực tế (cf_score)
+        # 80% Điểm Heuristic cốt lõi + 20% Điểm Lọc cộng tác hành vi thực tế (cf_score)
         final_score = (colab_heuristic_score * 0.80) + (row.get("cf_score", 0.5) * 0.20)
         
         return round(final_score, 4)
@@ -129,7 +128,6 @@ def recommend_rooms(userId, top_k=10):
     # Áp dụng tính điểm
     recommend_df["recommendation_score"] = recommend_df.apply(calculate_row_score, axis=1)
 
-    # Áp dụng giải thích văn phong mềm mại và lấy toàn bộ dữ liệu giải thích
     def apply_explanation(row):
         exp_data = explain_recommendation(row)
         return pd.Series({

@@ -65,7 +65,6 @@ def calculate_xgboost_score(scores_dict, model=None) -> float:
         # Điểm xác suất từ XGBoost (0.0 -> 100.0)
         xgb_prob = model.predict_proba(X)[0, 1] * 100
         
-        # 🌟 Cơ chế Hybrid mới: Ưu tiên mô hình Colab làm chủ đạo (85%), XGBoost làm bổ trợ tinh chỉnh (15%)
         final_score = (colab_score * 0.85) + (xgb_prob * 0.15)
         return round(final_score, 2)
         
