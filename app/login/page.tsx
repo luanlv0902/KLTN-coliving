@@ -151,7 +151,7 @@ export default function LoginPage() {
                     Mật khẩu
                   </span>
                   <Link
-                    href="#"
+                    href="/forgot-password"
                     className="text-[10px] font-bold uppercase tracking-wider text-orange-700 hover:underline"
                   >
                     Quên mật khẩu?
