@@ -1,0 +1,154 @@
+name: Deploy Backend Microservices
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - deployment
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REMOTE_APP_DIR: ${{ vars.EC2_BACKEND_DEPLOY_DIR || '~/coliving/backend' }}
+  HEALTHCHECK_URL: ${{ vars.BACKEND_HEALTHCHECK_URL }}
+
+jobs:
+  deploy:
+    name: Sync source and deploy on EC2
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create deployment archive
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.next' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='ai/.env' \
+            --exclude='*.pem' \
+            --exclude='docx_render' \
+            --exclude='.tmp' \
+            -czf /tmp/coliving-backend-source.tgz .
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          cat > ~/.ssh/ec2_backend_key <<'EOF'
+          ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/.ssh/ec2_backend_key
+          sed -i 's/\r$//' ~/.ssh/ec2_backend_key
+          chmod 600 ~/.ssh/ec2_backend_key
+
+          ssh-keyscan -T 10 -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Prepare production env
+        run: |
+          set -euo pipefail
+          cat > /tmp/coliving-backend.env <<'EOF'
+          ${{ secrets.BACKEND_ENV_FILE }}
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/coliving-backend.env
+          sed -i 's/\r$//' /tmp/coliving-backend.env
+          test -s /tmp/coliving-backend.env
+
+      - name: Upload source and env to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/ec2_backend_key \
+            /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
+            "${EC2_USER}@${EC2_HOST}:/tmp/"
+
+      - name: Deploy on EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/ec2_backend_key "${EC2_USER}@${EC2_HOST}" \
+            "REMOTE_APP_DIR='${REMOTE_APP_DIR}' \
+             HEALTHCHECK_URL='${HEALTHCHECK_URL}' \
+             bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          case "${REMOTE_APP_DIR}" in
+            "~") REMOTE_APP_DIR="${HOME}" ;;
+            "~/"*) REMOTE_APP_DIR="${HOME}/${REMOTE_APP_DIR:2}" ;;
+          esac
+
+          mkdir -p "${REMOTE_APP_DIR}"
+
+          if [ -f "${REMOTE_APP_DIR}/.env" ]; then
+            cp "${REMOTE_APP_DIR}/.env" "${REMOTE_APP_DIR}/.env.previous"
+          fi
+
+          tar -xzf /tmp/coliving-backend-source.tgz -C "${REMOTE_APP_DIR}"
+          mv /tmp/coliving-backend.env "${REMOTE_APP_DIR}/.env"
+          chmod 600 "${REMOTE_APP_DIR}/.env"
+
+          cd "${REMOTE_APP_DIR}"
+
+          docker compose --env-file .env -f docker-compose.production.yml config --quiet
+
+          docker compose --env-file .env -f docker-compose.production.yml up -d --build --remove-orphans \
+            rabbitmq identity-service property-service rental-service community-service preference-service ai-service kong caddy prometheus grafana
+
+          echo "Waiting for services to settle..."
+          sleep 20
+          docker compose --env-file .env -f docker-compose.production.yml ps
+
+          if [ -n "${HEALTHCHECK_URL}" ]; then
+            echo "Checking backend health: ${HEALTHCHECK_URL}"
+            for i in $(seq 1 30); do
+              if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
+                echo "Backend health check passed."
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Backend health check failed." >&2
+            docker compose --env-file .env -f docker-compose.production.yml logs --tail=200 kong >&2
+            docker compose --env-file .env -f docker-compose.production.yml logs --tail=200 identity-service >&2
+            exit 1
+          fi
+
+          echo "No BACKEND_HEALTHCHECK_URL configured; skipping HTTP health check."
+          REMOTE_SCRIPT
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+            echo "No SLACK_WEBHOOK_URL configured; skipping failure notification."
+            exit 0
+          fi
+
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            --data "{\"text\":\"Backend microservices deployment failed for ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "${SLACK_WEBHOOK_URL}" >/dev/null
