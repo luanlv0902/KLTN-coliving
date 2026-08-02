@@ -44,27 +44,44 @@ jobs:
             -czf /tmp/coliving-backend-source.tgz .
 
       - name: Configure SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST. Add it in Settings -> Secrets and variables -> Actions -> Secrets."
+            exit 1
+          fi
+
+          if [ -z "${EC2_SSH_PRIVATE_KEY}" ]; then
+            echo "::error::Missing GitHub secret EC2_SSH_PRIVATE_KEY. Paste the full private key, including BEGIN/END lines."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          cat > ~/.ssh/ec2_backend_key <<'EOF'
-          ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          EOF
-          sed -i 's/^[[:space:]]*//' ~/.ssh/ec2_backend_key
+          printf '%s\n' "${EC2_SSH_PRIVATE_KEY}" > ~/.ssh/ec2_backend_key
           sed -i 's/\r$//' ~/.ssh/ec2_backend_key
           chmod 600 ~/.ssh/ec2_backend_key
 
-          ssh-keyscan -T 10 -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null
+          ssh-keyscan -T 10 -H "${EC2_HOST}" >> ~/.ssh/known_hosts
 
       - name: Prepare production env
+        env:
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
         run: |
           set -euo pipefail
-          cat > /tmp/coliving-backend.env <<'EOF'
-          ${{ secrets.BACKEND_ENV_FILE }}
-          EOF
-          sed -i 's/^[[:space:]]*//' /tmp/coliving-backend.env
+
+          if [ -z "${BACKEND_ENV_FILE}" ]; then
+            echo "::error::Missing GitHub secret BACKEND_ENV_FILE. Paste the full production .env content."
+            exit 1
+          fi
+
+          printf '%s\n' "${BACKEND_ENV_FILE}" > /tmp/coliving-backend.env
           sed -i 's/\r$//' /tmp/coliving-backend.env
           test -s /tmp/coliving-backend.env
 
@@ -74,6 +91,17 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
+
+          if [ -z "${EC2_USER}" ]; then
+            echo "::error::Missing GitHub secret EC2_USER. For Ubuntu EC2, this is usually ubuntu."
+            exit 1
+          fi
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST."
+            exit 1
+          fi
+
           scp -i ~/.ssh/ec2_backend_key \
             /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
             "${EC2_USER}@${EC2_HOST}:/tmp/"
@@ -84,6 +112,16 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
+
+          if [ -z "${EC2_USER}" ]; then
+            echo "::error::Missing GitHub secret EC2_USER."
+            exit 1
+          fi
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST."
+            exit 1
+          fi
 
           ssh -i ~/.ssh/ec2_backend_key "${EC2_USER}@${EC2_HOST}" \
             "REMOTE_APP_DIR='${REMOTE_APP_DIR}' \
