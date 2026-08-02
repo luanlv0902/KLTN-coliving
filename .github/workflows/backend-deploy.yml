@@ -146,14 +146,40 @@ jobs:
 
           cd "${REMOTE_APP_DIR}"
 
-          docker compose --env-file .env -f docker-compose.production.yml config --quiet
+          required_env_vars="
+          BACKEND_DOMAIN
+          DATABASE_URL
+          JWT_SECRET
+          INTERNAL_SERVICE_TOKEN
+          RABBITMQ_PASSWORD
+          GRAFANA_ADMIN_PASSWORD
+          AI_DATABASE_URL
+          "
 
-          docker compose --env-file .env -f docker-compose.production.yml up -d --build --remove-orphans \
+          for var_name in ${required_env_vars}; do
+            if ! grep -Eq "^${var_name}=.+" .env; then
+              echo "::error::Missing or empty ${var_name} in BACKEND_ENV_FILE secret."
+              exit 1
+            fi
+          done
+
+          if docker info >/dev/null 2>&1; then
+            DOCKER_CMD="docker"
+          elif sudo -n docker info >/dev/null 2>&1; then
+            DOCKER_CMD="sudo docker"
+          else
+            echo "::error::The EC2 user cannot access Docker. Add the user to the docker group, re-login, or allow passwordless sudo for docker."
+            exit 1
+          fi
+
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml config --quiet
+
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml up -d --build --remove-orphans \
             rabbitmq identity-service property-service rental-service community-service preference-service ai-service kong caddy prometheus grafana
 
           echo "Waiting for services to settle..."
           sleep 20
-          docker compose --env-file .env -f docker-compose.production.yml ps
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml ps
 
           if [ -n "${HEALTHCHECK_URL}" ]; then
             echo "Checking backend health: ${HEALTHCHECK_URL}"
@@ -166,8 +192,8 @@ jobs:
             done
 
             echo "Backend health check failed." >&2
-            docker compose --env-file .env -f docker-compose.production.yml logs --tail=200 kong >&2
-            docker compose --env-file .env -f docker-compose.production.yml logs --tail=200 identity-service >&2
+            ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml logs --tail=200 kong >&2
+            ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml logs --tail=200 identity-service >&2
             exit 1
           fi
 
