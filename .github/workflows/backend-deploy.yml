@@ -3,8 +3,6 @@ name: Deploy Backend Microservices
 on:
   push:
     branches:
-      - main
-      - master
       - deployment
   workflow_dispatch:
 
