@@ -1,0 +1,297 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-coliving}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  identity-service:
+    build:
+      context: .
+      dockerfile: services/identity-service/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-}
+      JWT_SECRET: ${JWT_SECRET}
+      PASSWORD_RESET_PEPPER: ${PASSWORD_RESET_PEPPER:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      PASSWORD_RESET_DEV_MODE: ${PASSWORD_RESET_DEV_MODE:-false}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      PROPERTY_SERVICE_URL: http://property-service:4002
+      RENTAL_SERVICE_URL: http://rental-service:4003
+      COMMUNITY_SERVICE_URL: http://community-service:4004
+      PREFERENCE_SERVICE_URL: http://preference-service:4005
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      MICROSERVICE_TIMEOUT_MS: ${MICROSERVICE_TIMEOUT_MS:-3000}
+      PORT: 4001
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  property-service:
+    build:
+      context: .
+      dockerfile: services/property-service/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PROPERTY_DATABASE_URL: ${PROPERTY_DATABASE_URL:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      IDENTITY_SERVICE_URL: http://identity-service:4001
+      IDENTITY_SERVICE_TIMEOUT_MS: ${IDENTITY_SERVICE_TIMEOUT_MS:-8000}
+      COMMUNITY_SERVICE_URL: http://community-service:4004
+      RENTAL_SERVICE_URL: http://rental-service:4003
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      MICROSERVICE_TIMEOUT_MS: ${MICROSERVICE_TIMEOUT_MS:-3000}
+      PORT: 4002
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4002/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  rental-service:
+    build:
+      context: .
+      dockerfile: services/rental-service/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RENTAL_DATABASE_URL: ${RENTAL_DATABASE_URL:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      IDENTITY_SERVICE_URL: http://identity-service:4001
+      IDENTITY_SERVICE_TIMEOUT_MS: ${IDENTITY_SERVICE_TIMEOUT_MS:-8000}
+      PROPERTY_SERVICE_URL: http://property-service:4002
+      AI_SERVICE_URL: http://ai-service:8000
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      MICROSERVICE_TIMEOUT_MS: ${MICROSERVICE_TIMEOUT_MS:-3000}
+      PORT: 4003
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4003/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  community-service:
+    build:
+      context: .
+      dockerfile: services/community-service/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      COMMUNITY_DATABASE_URL: ${COMMUNITY_DATABASE_URL:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      IDENTITY_SERVICE_URL: http://identity-service:4001
+      IDENTITY_SERVICE_TIMEOUT_MS: ${IDENTITY_SERVICE_TIMEOUT_MS:-8000}
+      PROPERTY_SERVICE_URL: http://property-service:4002
+      RENTAL_SERVICE_URL: http://rental-service:4003
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      MICROSERVICE_TIMEOUT_MS: ${MICROSERVICE_TIMEOUT_MS:-3000}
+      PORT: 4004
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      property-service:
+        condition: service_healthy
+      rental-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4004/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  preference-service:
+    build:
+      context: .
+      dockerfile: services/preference-service/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PREFERENCE_DATABASE_URL: ${PREFERENCE_DATABASE_URL:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      PORT: 4005
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4005/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai/Dockerfile
+    environment:
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      AI_DATABASE_URL: ${AI_DATABASE_URL}
+      USE_SERVICE_SCHEMAS: ${USE_SERVICE_SCHEMAS:-false}
+      AI_USE_PROJECTIONS: ${AI_USE_PROJECTIONS:-false}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-coliving}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-coliving.events}
+      RABBITMQ_DEAD_LETTER_EXCHANGE: ${RABBITMQ_DEAD_LETTER_EXCHANGE:-coliving.events.dlx}
+      EVENT_CONSUMER_MAX_RETRIES: ${EVENT_CONSUMER_MAX_RETRIES:-5}
+      AI_PROJECTION_QUEUE: ${AI_PROJECTION_QUEUE:-ai-service.projections}
+      AI_RECONCILIATION_INTERVAL_SECONDS: ${AI_RECONCILIATION_INTERVAL_SECONDS:-86400}
+      AI_RECONCILIATION_RUN_ON_START: ${AI_RECONCILIATION_RUN_ON_START:-false}
+      AI_ENABLE_RECONCILIATION_SCHEDULER: ${AI_ENABLE_RECONCILIATION_SCHEDULER:-false}
+      AI_RECONCILE_ROOM_PROFILES: ${AI_RECONCILE_ROOM_PROFILES:-false}
+      AI_PROVISION_SCHEMA: ${AI_PROVISION_SCHEMA:-false}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  kong:
+    image: kong:3.9.3
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_STATUS_LISTEN: 0.0.0.0:8100
+      KONG_DNS_VALID_TTL: 1
+      KONG_DNS_STALE_TTL: 4
+      KONG_DNS_NOT_FOUND_TTL: 1
+      KONG_DNS_ERROR_TTL: 1
+    volumes:
+      - ./kong/kong.yml:/kong/declarative/kong.yml:ro
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      property-service:
+        condition: service_healthy
+      rental-service:
+        condition: service_healthy
+      community-service:
+        condition: service_healthy
+      preference-service:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    environment:
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      kong:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      property-service:
+        condition: service_healthy
+      rental-service:
+        condition: service_healthy
+      community-service:
+        condition: service_healthy
+      preference-service:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+  prometheus-data:
+  grafana-data:
