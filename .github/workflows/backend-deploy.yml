@@ -65,12 +65,7 @@ jobs:
           sed -i 's/\r$//' ~/.ssh/ec2_backend_key
           chmod 600 ~/.ssh/ec2_backend_key
 
-          if ! ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null 2>&1; then
-            echo "::error::ssh-keygen failed to parse EC2_SSH_PRIVATE_KEY. Ensure the secret contains the exact private key, including BEGIN/END lines, uses LF newlines, and is not passphrase-protected."
-            ssh-keygen -y -f ~/.ssh/ec2_backend_key 2>&1 | sed -n '1,100p' >&2 || true
-            exit 1
-          fi
-
+          ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null
           ssh-keyscan -T 10 -H "${EC2_HOST}" >> ~/.ssh/known_hosts
 
       - name: Prepare production env
@@ -87,32 +82,6 @@ jobs:
           printf '%s\n' "${BACKEND_ENV_FILE}" > /tmp/coliving-backend.env
           sed -i 's/\r$//' /tmp/coliving-backend.env
           test -s /tmp/coliving-backend.env
-
-      - name: Test SSH connectivity
-        env:
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${EC2_USER}" ]; then
-            echo "::error::Missing GitHub secret EC2_USER. For Ubuntu EC2, this is usually ubuntu."
-            exit 1
-          fi
-
-          if [ -z "${EC2_HOST}" ]; then
-            echo "::error::Missing GitHub secret EC2_HOST."
-            exit 1
-          fi
-
-          ssh \
-            -i ~/.ssh/ec2_backend_key \
-            -o BatchMode=yes \
-            -o ConnectTimeout=15 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
-            "${EC2_USER}@${EC2_HOST}" \
-            'echo "SSH OK"; hostname; whoami'
 
       - name: Upload source and env to EC2
         env:
@@ -131,22 +100,9 @@ jobs:
             exit 1
           fi
 
-          upload_cmd() {
-            scp \
-              -i ~/.ssh/ec2_backend_key \
-              -o BatchMode=yes \
-              -o ConnectTimeout=15 \
-              -o ServerAliveInterval=30 \
-              -o ServerAliveCountMax=3 \
-              /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
-              "${EC2_USER}@${EC2_HOST}:/tmp/"
-          }
-
-          upload_cmd || {
-            echo "First SCP attempt failed; retrying once in 3 seconds..."
-            sleep 3
-            upload_cmd
-          }
+          scp -i ~/.ssh/ec2_backend_key \
+            /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
+            "${EC2_USER}@${EC2_HOST}:/tmp/"
 
       - name: Deploy on EC2
         env:
@@ -165,13 +121,7 @@ jobs:
             exit 1
           fi
 
-          ssh \
-            -i ~/.ssh/ec2_backend_key \
-            -o BatchMode=yes \
-            -o ConnectTimeout=15 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
-            "${EC2_USER}@${EC2_HOST}" \
+          ssh -i ~/.ssh/ec2_backend_key "${EC2_USER}@${EC2_HOST}" \
             "REMOTE_APP_DIR='${REMOTE_APP_DIR}' \
              HEALTHCHECK_URL='${HEALTHCHECK_URL}' \
              bash -s" <<'REMOTE_SCRIPT'
