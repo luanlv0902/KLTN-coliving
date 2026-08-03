@@ -2,7 +2,14 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const expectedModels = {
-  identity: ["AdminLog", "IdentityInboxEvent", "PhoneOtp", "User"],
+  identity: [
+    "AdminLog",
+    "IdentityInboxEvent",
+    "IdentityOutboxEvent",
+    "PasswordResetOtp",
+    "PhoneOtp",
+    "User",
+  ],
   property: [
     "Amenity",
     "CommunityManagerArea",
@@ -34,7 +41,12 @@ const expectedModels = {
     "SharedSpaceActivity",
     "UserDeviceToken",
   ],
-  preference: ["RoomInteraction", "user_lifestyle_profiles", "user_preferences"],
+  preference: [
+    "PreferenceOutboxEvent",
+    "RoomInteraction",
+    "user_lifestyle_profiles",
+    "user_preferences",
+  ],
 };
 
 const clients = {

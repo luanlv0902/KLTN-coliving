@@ -11,6 +11,8 @@ const exactTitles: Record<string, string> = {
   "/rooms": "Danh sách phòng",
   "/rooms/recommendations": "Phòng phù hợp",
   "/preferences": "Cập nhật sở thích",
+  "/forgot-password": "Quên mật khẩu",
+  "/reset-password": "Đặt lại mật khẩu",
   "/favorites": "Phòng yêu thích",
   "/bookings": "Đặt phòng của tôi",
   "/contracts": "Hợp đồng của tôi",

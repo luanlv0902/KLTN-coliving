@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
-export function AuthHeader({ page }: { page: 'login' | 'register' }) {
+type AuthPage = 'login' | 'register' | 'forgot-password' | 'reset-password';
+
+export function AuthHeader({ page }: { page: AuthPage }) {
   const isLoginPage = page === 'login';
+  const isRecoveryPage = page === 'forgot-password' || page === 'reset-password';
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
@@ -24,7 +27,11 @@ export function AuthHeader({ page }: { page: 'login' | 'register' }) {
 
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-slate-500 lg:inline">
-            {isLoginPage ? 'Chưa có tài khoản?' : 'Đã có tài khoản?'}
+            {isRecoveryPage
+              ? 'Đã nhớ mật khẩu?'
+              : isLoginPage
+                ? 'Chưa có tài khoản?'
+                : 'Đã có tài khoản?'}
           </span>
           <Link
             href={isLoginPage ? '/register' : '/login'}

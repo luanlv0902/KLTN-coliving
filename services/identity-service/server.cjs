@@ -26,6 +26,10 @@ const {
   updateProfile,
 } = require("./auth.cjs");
 const { requestPhoneOtp, verifyPhoneOtp } = require("./phone-otp.cjs");
+const {
+  confirmPasswordReset,
+  requestPasswordReset,
+} = require("./password-reset.cjs");
 const { getDomainUser, getDomainUsers, searchDomainUsers } = require("./domain-users.cjs");
 const {
   deleteLegacyAccount,
@@ -207,6 +211,30 @@ app.post("/v1/auth/register", async (request, response) => {
     console.error("[identity-service] POST /v1/auth/register failed", error);
     return response.status(error.statusCode || 500).json({
       message: "Hệ thống đang gặp sự cố. Vui lòng thử lại sau.",
+    });
+  }
+});
+
+app.post("/v1/auth/password-reset/request", async (request, response) => {
+  try {
+    const result = await requestPasswordReset(prisma, request.body || {});
+    return response.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[identity-service] POST password reset request failed", error);
+    return response.status(503).json({
+      message: "Hiện không thể gửi email đặt lại mật khẩu. Vui lòng thử lại sau.",
+    });
+  }
+});
+
+app.post("/v1/auth/password-reset/confirm", async (request, response) => {
+  try {
+    const result = await confirmPasswordReset(prisma, request.body || {});
+    return response.status(result.status).json(result.payload);
+  } catch (error) {
+    console.error("[identity-service] POST password reset confirm failed", error);
+    return response.status(500).json({
+      message: "Không thể đặt lại mật khẩu. Vui lòng thử lại sau.",
     });
   }
 });

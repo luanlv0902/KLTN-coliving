@@ -30,6 +30,7 @@ model User {
   adminActions    AdminLog[]  @relation("AdminAction")
   affectedLogs    AdminLog[]  @relation("AffectedUser")
   phoneOtps       PhoneOtp[]
+  passwordResetOtps PasswordResetOtp[]
 
   @@map("User")
 }
@@ -47,6 +48,20 @@ model PhoneOtp {
 
   @@index([userId])
   @@index([phone])
+  @@index([expiresAt])
+}
+
+model PasswordResetOtp {
+  id           String    @id @default(uuid())
+  userId       String
+  codeHash     String
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  attemptCount Int       @default(0)
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
   @@index([expiresAt])
 }
 

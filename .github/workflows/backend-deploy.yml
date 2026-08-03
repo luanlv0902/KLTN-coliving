@@ -1,0 +1,216 @@
+name: Deploy Backend Microservices
+
+on:
+  push:
+    branches:
+      - deployment
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REMOTE_APP_DIR: ${{ vars.EC2_BACKEND_DEPLOY_DIR || '~/coliving/backend' }}
+  HEALTHCHECK_URL: ${{ vars.BACKEND_HEALTHCHECK_URL }}
+
+jobs:
+  deploy:
+    name: Sync source and deploy on EC2
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create deployment archive
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.next' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='ai/.env' \
+            --exclude='*.pem' \
+            --exclude='docx_render' \
+            --exclude='.tmp' \
+            -czf /tmp/coliving-backend-source.tgz .
+
+      - name: Configure SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST. Add it in Settings -> Secrets and variables -> Actions -> Secrets."
+            exit 1
+          fi
+
+          if [ -z "${EC2_SSH_PRIVATE_KEY}" ]; then
+            echo "::error::Missing GitHub secret EC2_SSH_PRIVATE_KEY. Paste the full private key, including BEGIN/END lines."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "${EC2_SSH_PRIVATE_KEY}" > ~/.ssh/ec2_backend_key
+          sed -i 's/\r$//' ~/.ssh/ec2_backend_key
+          chmod 600 ~/.ssh/ec2_backend_key
+
+          ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null
+          ssh-keyscan -T 10 -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Prepare production env
+        env:
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_ENV_FILE}" ]; then
+            echo "::error::Missing GitHub secret BACKEND_ENV_FILE. Paste the full production .env content."
+            exit 1
+          fi
+
+          printf '%s\n' "${BACKEND_ENV_FILE}" > /tmp/coliving-backend.env
+          sed -i 's/\r$//' /tmp/coliving-backend.env
+          test -s /tmp/coliving-backend.env
+
+      - name: Upload source and env to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EC2_USER}" ]; then
+            echo "::error::Missing GitHub secret EC2_USER. For Ubuntu EC2, this is usually ubuntu."
+            exit 1
+          fi
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST."
+            exit 1
+          fi
+
+          scp -i ~/.ssh/ec2_backend_key \
+            /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
+            "${EC2_USER}@${EC2_HOST}:/tmp/"
+
+      - name: Deploy on EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EC2_USER}" ]; then
+            echo "::error::Missing GitHub secret EC2_USER."
+            exit 1
+          fi
+
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing GitHub secret EC2_HOST."
+            exit 1
+          fi
+
+          ssh -i ~/.ssh/ec2_backend_key "${EC2_USER}@${EC2_HOST}" \
+            "REMOTE_APP_DIR='${REMOTE_APP_DIR}' \
+             HEALTHCHECK_URL='${HEALTHCHECK_URL}' \
+             bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          case "${REMOTE_APP_DIR}" in
+            "~") REMOTE_APP_DIR="${HOME}" ;;
+            "~/"*) REMOTE_APP_DIR="${HOME}/${REMOTE_APP_DIR:2}" ;;
+          esac
+
+          mkdir -p "${REMOTE_APP_DIR}"
+
+          if [ -f "${REMOTE_APP_DIR}/.env" ]; then
+            cp "${REMOTE_APP_DIR}/.env" "${REMOTE_APP_DIR}/.env.previous"
+          fi
+
+          tar -xzf /tmp/coliving-backend-source.tgz -C "${REMOTE_APP_DIR}"
+          mv /tmp/coliving-backend.env "${REMOTE_APP_DIR}/.env"
+          chmod 600 "${REMOTE_APP_DIR}/.env"
+
+          cd "${REMOTE_APP_DIR}"
+
+          required_env_vars="
+          BACKEND_DOMAIN
+          DATABASE_URL
+          JWT_SECRET
+          INTERNAL_SERVICE_TOKEN
+          RABBITMQ_PASSWORD
+          GRAFANA_ADMIN_PASSWORD
+          AI_DATABASE_URL
+          "
+
+          for var_name in ${required_env_vars}; do
+            if ! grep -Eq "^${var_name}=.+" .env; then
+              echo "::error::Missing or empty ${var_name} in BACKEND_ENV_FILE secret."
+              exit 1
+            fi
+          done
+
+          if docker info >/dev/null 2>&1; then
+            DOCKER_CMD="docker"
+          elif sudo -n docker info >/dev/null 2>&1; then
+            DOCKER_CMD="sudo docker"
+          else
+            echo "::error::The EC2 user cannot access Docker. Add the user to the docker group, re-login, or allow passwordless sudo for docker."
+            exit 1
+          fi
+
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml config --quiet
+
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml up -d --build --remove-orphans \
+            rabbitmq identity-service property-service rental-service community-service preference-service ai-service kong caddy prometheus grafana
+
+          echo "Waiting for services to settle..."
+          sleep 20
+          ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml ps
+
+          if [ -n "${HEALTHCHECK_URL}" ]; then
+            echo "Checking backend health: ${HEALTHCHECK_URL}"
+            for i in $(seq 1 30); do
+              if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
+                echo "Backend health check passed."
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Backend health check failed." >&2
+            ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml logs --tail=200 kong >&2
+            ${DOCKER_CMD} compose --env-file .env -f docker-compose.production.yml logs --tail=200 identity-service >&2
+            exit 1
+          fi
+
+          echo "No BACKEND_HEALTHCHECK_URL configured; skipping HTTP health check."
+          REMOTE_SCRIPT
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+            echo "No SLACK_WEBHOOK_URL configured; skipping failure notification."
+            exit 0
+          fi
+
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            --data "{\"text\":\"Backend microservices deployment failed for ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "${SLACK_WEBHOOK_URL}" >/dev/null
