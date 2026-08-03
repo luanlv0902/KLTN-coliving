@@ -1,13 +1,27 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let supabaseClient: SupabaseClient<any, 'ai'> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  db: {
-    schema: 'ai',
-  },
-});
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error(
+      'Supabase interaction logging is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.'
+    );
+  }
+
+  supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
+    db: {
+      schema: 'ai',
+    },
+  });
+
+  return supabaseClient;
+}
 
 export type InteractionType = 
   | 'impression'    // Lượt xem: 0.1
@@ -39,7 +53,7 @@ export class InteractionService {
     const { userId, roomId, interactionType, sourceCreatedAt } = data;
     const interactionValue = INTERACTION_VALUES[interactionType];
 
-    const { error } = await supabase.from('room_interactions').insert({
+    const { error } = await getSupabaseClient().from('room_interactions').insert({
       interaction_id: crypto.randomUUID(),
       user_id: userId,
       room_id: roomId,
@@ -69,7 +83,7 @@ export class InteractionService {
       projected_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase.from('room_interactions').insert(records);
+    const { error } = await getSupabaseClient().from('room_interactions').insert(records);
 
     if (error) {
       console.error('[InteractionService] Failed to log interactions batch:', error);
@@ -80,7 +94,7 @@ export class InteractionService {
    * Lấy lịch sử tương tác của một người dùng với một phòng
    */
   async getUserRoomInteractions(userId: string, roomId: string): Promise<any[]> {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from('room_interactions')
       .select('*')
       .eq('user_id', userId)
@@ -99,7 +113,7 @@ export class InteractionService {
    * Lấy tất cả tương tác của một người dùng
    */
   async getUserInteractions(userId: string, limit = 100): Promise<any[]> {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from('room_interactions')
       .select('*')
       .eq('user_id', userId)
@@ -118,7 +132,7 @@ export class InteractionService {
    * Tính tổng điểm tương tác của người dùng với phòng
    */
   async getUserRoomScore(userId: string, roomId: string): Promise<number> {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from('room_interactions')
       .select('interaction_value')
       .eq('user_id', userId)
