@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useInteraction } from '@/lib/hooks/useInteraction';
 
 type FavoriteButtonProps = {
   roomId: string;
@@ -13,6 +14,7 @@ export function FavoriteButton({ roomId }: FavoriteButtonProps) {
   const { user, token, isLoading } = useAuth();
   const [favorited, setFavorited] = useState(false);
   const [pending, setPending] = useState(false);
+  const { logSave } = useInteraction({ userId: user?.id, roomId });
 
   useEffect(() => {
     if (isLoading || !user) {
@@ -83,6 +85,11 @@ export function FavoriteButton({ roomId }: FavoriteButtonProps) {
       }
 
       setFavorited(Boolean(payload?.data?.favorited));
+
+      // Log save interaction when user favorites a room
+      if (nextFavorited) {
+        logSave();
+      }
     } catch (error) {
       setFavorited(previousFavorited);
       console.error('Không thể cập nhật yêu thích:', error);

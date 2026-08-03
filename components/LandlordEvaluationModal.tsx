@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { X, AlertTriangle, CheckCircle, AlertCircle, Loader2, Info, Users, ShieldAlert } from 'lucide-react'
 
-// 1. CẬP NHẬT INTERFACE THEO ĐÚNG ĐỊNH DẠNG JSON ĐỊNH LƯỢNG MỚI TỪ BACKEND
 interface EvaluationData {
   booking: {
     id: string
@@ -31,7 +30,7 @@ interface EvaluationData {
       room_id: string
       room_title: string
       final_compatibility_score: number
-      compatibility_level: string // "ĐỘ TƯƠNG THÍCH CAO" | "ĐỘ TƯƠNG THÍCH TRUNG BÌNH" | "ĐỘ TƯƠNG THÍCH THẤP"
+      compatibility_level: string
       data_description: string
     }
     critical_rules_check: {
@@ -148,11 +147,21 @@ export function LandlordEvaluationModal({
     }
   }
 
-  if (!isOpen) return null
+  const normalizePercent = (value: unknown): number => {
+    const numeric = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(numeric)) return 0
+    if (numeric < 0) return 0
+    if (numeric > 100) return 100
+    return numeric
+  }
 
+  const formatPercent = (value: unknown) => normalizePercent(value).toFixed(1)
+
+  const toPercentWidth = (value: unknown) => `${normalizePercent(value)}%`
+
+  if (!isOpen) return null
   // Rút gọn biến định danh để code gọn gàng sạch sẽ hơn
   const evalInfo = data?.evaluation
-
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -164,7 +173,6 @@ export function LandlordEvaluationModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-
         {/* Content */}
         <div className="px-6 py-4">
           {loading && !data ? (
@@ -249,17 +257,17 @@ export function LandlordEvaluationModal({
               {/* 4. Biểu đồ chi tiết các chỉ số thói quen dạng Progress Bar */}
               <div className="border border-gray-200 rounded-lg p-5 space-y-4">
                 <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
-                  <span>📊 Kết quả phân rã chỉ số thành phần</span>
+                  <span>Kết quả phân rã chỉ số thành phần</span>
                 </h3>
                 <div className="space-y-3">
                   {/* Chỉ số Sạch sẽ */}
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-600">Độ đồng điệu vệ sinh, gọn gàng</span>
-                      <span className="font-semibold text-gray-900">{evalInfo?.metric_breakdown_percent?.cleanliness_match_rate || 0}%</span>
+                      <span className="font-semibold text-gray-900">{formatPercent(evalInfo?.metric_breakdown_percent?.cleanliness_match_rate)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${evalInfo?.metric_breakdown_percent?.cleanliness_match_rate || 0}%` }}></div>
+                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: toPercentWidth(evalInfo?.metric_breakdown_percent?.cleanliness_match_rate) }}></div>
                     </div>
                   </div>
 
@@ -267,10 +275,10 @@ export function LandlordEvaluationModal({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-600">Sự trùng khớp khung giờ sinh hoạt / giấc ngủ</span>
-                      <span className="font-semibold text-gray-900">{evalInfo?.metric_breakdown_percent?.sleep_habit_match_rate || 0}%</span>
+                      <span className="font-semibold text-gray-900">{formatPercent(evalInfo?.metric_breakdown_percent?.sleep_habit_match_rate)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className="bg-indigo-600 h-2 rounded-full" style={{ width: `${evalInfo?.metric_breakdown_percent?.sleep_habit_match_rate || 0}%` }}></div>
+                      <div className="bg-indigo-600 h-2 rounded-full" style={{ width: toPercentWidth(evalInfo?.metric_breakdown_percent?.sleep_habit_match_rate) }}></div>
                     </div>
                   </div>
 
@@ -278,10 +286,10 @@ export function LandlordEvaluationModal({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-600">Độ tương hợp môi trường giao tiếp, tiếng ồn</span>
-                      <span className="font-semibold text-gray-900">{evalInfo?.metric_breakdown_percent?.social_environment_match_rate || 0}%</span>
+                      <span className="font-semibold text-gray-900">{formatPercent(evalInfo?.metric_breakdown_percent?.social_environment_match_rate)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className="bg-purple-600 h-2 rounded-full" style={{ width: `${evalInfo?.metric_breakdown_percent?.social_environment_match_rate || 0}%` }}></div>
+                      <div className="bg-purple-600 h-2 rounded-full" style={{ width: toPercentWidth(evalInfo?.metric_breakdown_percent?.social_environment_match_rate) }}></div>
                     </div>
                   </div>
 
@@ -289,10 +297,10 @@ export function LandlordEvaluationModal({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-600">Mức độ hòa hợp xã hội với tập thể hiện tại</span>
-                      <span className="font-semibold text-gray-900">{evalInfo?.metric_breakdown_percent?.roommate_social_cohesion_total || 0}%</span>
+                      <span className="font-semibold text-gray-900">{formatPercent(evalInfo?.metric_breakdown_percent?.roommate_social_cohesion_total)}%</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${evalInfo?.metric_breakdown_percent?.roommate_social_cohesion_total || 0}%` }}></div>
+                      <div className="bg-emerald-600 h-2 rounded-full" style={{ width: toPercentWidth(evalInfo?.metric_breakdown_percent?.roommate_social_cohesion_total) }}></div>
                     </div>
                   </div>
                 </div>

@@ -50,8 +50,6 @@ def evaluate_user_for_landlord(userId: str, roomId: str):
         )
         
         room_compliance_score = (clean_room_sim * 0.4 + sleep_room_sim * 0.4 + social_room_sim * 0.2) * 100
-
-      
         roommate_breakdown = []
         avg_people_sim = 1.0
         best_match_member = "Không có"

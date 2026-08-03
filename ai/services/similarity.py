@@ -107,8 +107,6 @@ def occupancy_ratio(current, maximum):
 
     ratio = current / maximum
 
-    # Phạt nặng hơn khi phòng đông người
-    # Hệ số 0.9 thay vì 0.7: càng đông điểm càng tụt nhanh
     score = 1 - (ratio * 0.9)
 
     score = max(
@@ -137,22 +135,17 @@ def cleanliness_compatibility(
         str(room_requirement or "medium").lower(),
         3
     )
-
     user_priority = _to_float(user_priority, 3.0)
 
     diff = abs(user_priority - room_priority)
     penalty = ((diff / 4.0) ** 3) * 1.5
-    
     compatibility = 1 - penalty
-
     compatibility = max(
         min(compatibility, MAX_SIMILARITY),
         MIN_SIMILARITY
     )
 
     return round(compatibility, 4)
-
-
 # =====================================================
 # SOCIAL COMPATIBILITY
 # =====================================================
@@ -418,11 +411,7 @@ def compatibility_with_roommates(
     return round(final_score, 4)
 
 def calculate_cluster_lifestyle_similarity(users_df, current_userId, target_room_occupants):
-    """
-    Tái hiện Bước 2 & Bước 3 từ PDF:
-    Gom cụm toàn bộ User dựa trên Lifestyle, sau đó tính độ tương đồng Cosine 
-    giữa User hiện tại với các thành viên đang ở trong phòng mục tiêu.
-    """
+ 
     if not target_room_occupants: # Phòng trống
         return 0.5 # Điểm trung bình mặc định
 
@@ -444,7 +433,7 @@ def calculate_cluster_lifestyle_similarity(users_df, current_userId, target_room
     scaler = MinMaxScaler()
     X = scaler.fit_transform(users_df[available_cols].fillna(3)) # Điền mặc định mức trung bình (3/5)
 
-    # Bước 2: K-means Clustering (Ví dụ chia làm 4 nhóm lối sống chính)
+    # Bước 2: K-means Clustering (chia làm 4 nhóm lối sống chính)
     kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
     users_df['cluster_lifestyle'] = kmeans.fit_predict(X)
 

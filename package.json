@@ -58,6 +58,7 @@
     "@googlemaps/js-api-loader": "2.1.1",
     "@prisma/client": "^6.19.3",
     "@radix-ui/react-avatar": "^1.1.11",
+    "@supabase/supabase-js": "^2.109.0",
     "amqplib": "^0.10.9",
     "bcrypt": "^6.0.0",
     "class-variance-authority": "^0.7.1",
