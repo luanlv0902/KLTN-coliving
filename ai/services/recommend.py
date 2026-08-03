@@ -6,7 +6,13 @@ from utils.loader_supabase import (
     rooms_df,
     occupancy_df,
     interact_df, 
-    model
+    model,
+    cache_lock,
+    use_ai_projections,
+    refresh_projection_cache,
+    load_users_from_supabase,
+    load_interactions_from_supabase,
+    load_service_rows_live,
 )
 from services.similarity import (
     location_similarity,
@@ -39,9 +45,71 @@ def _safe_float(value, default=0.0):
     except (TypeError, ValueError):
         return float(default)
 
+
+def _replace_in_place(target_df: pd.DataFrame, source_df: pd.DataFrame) -> None:
+    target_df.drop(target_df.index, inplace=True)
+    if len(target_df.columns) > 0:
+        target_df.drop(columns=list(target_df.columns), inplace=True)
+    for column in source_df.columns:
+        target_df[column] = source_df[column].to_numpy(copy=True)
+    target_df.reset_index(drop=True, inplace=True)
+
+
+def _refresh_runtime_data() -> None:
+    """Keep in-memory dataframes synchronized with latest preference/interaction changes."""
+    if use_ai_projections():
+        # Keep projection cache in sync when available, then override critical user signals
+        # from source-of-truth service schemas to avoid stale recommendation behavior.
+        refresh_projection_cache()
+
+        live_users = pd.DataFrame(load_service_rows_live("users"))
+        live_preferences = pd.DataFrame(load_service_rows_live("preferences"))
+        live_interactions = pd.DataFrame(load_service_rows_live("interactions"))
+
+        if not live_users.empty:
+            live_users = live_users.rename(columns={"id": "userId"})
+            if not live_preferences.empty:
+                live_users = live_users.merge(live_preferences, on="userId", how="left")
+            live_users = live_users.loc[:, ~live_users.columns.duplicated()]
+            live_users["budgetMinVnd"] = live_users["budgetMinVnd"].fillna(3000000)
+            live_users["budgetMaxVnd"] = live_users["budgetMaxVnd"].fillna(15000000)
+            live_users["preferredDistrict"] = live_users["preferredDistrict"].fillna("all")
+            live_users["lifestyleArchetype"] = live_users["lifestyleArchetype"].fillna("Young Professional")
+            live_users["priorityCleanliness"] = live_users["priorityCleanliness"].fillna(3)
+            live_users["prioritySocialEnvironment"] = live_users["prioritySocialEnvironment"].fillna(3)
+            live_users["acceptSmokingRoommates"] = live_users["acceptSmokingRoommates"].fillna(False)
+            live_users["acceptPets"] = live_users["acceptPets"].fillna(False)
+            live_users = live_users.rename(columns={
+                "budgetMinVnd": "budget_min_vnd",
+                "budgetMaxVnd": "budget_max_vnd",
+                "preferredDistrict": "preferred_location_district_id",
+                "lifestyleArchetype": "lifestyle_archetype",
+                "priorityCleanliness": "priority_cleanliness",
+                "prioritySocialEnvironment": "priority_social_environment",
+                "acceptSmokingRoommates": "accept_smoking_roommates",
+                "acceptPets": "accept_pets",
+            }).reset_index(drop=True)
+
+        if not live_interactions.empty:
+            live_interactions = live_interactions.rename(columns={"interactionValue": "rating"})
+
+        with cache_lock:
+            if not live_users.empty:
+                _replace_in_place(users_df, live_users)
+            _replace_in_place(interact_df, live_interactions)
+        return
+
+    fresh_users = load_users_from_supabase()
+    fresh_interactions = load_interactions_from_supabase()
+    with cache_lock:
+        _replace_in_place(users_df, fresh_users)
+        _replace_in_place(interact_df, fresh_interactions)
+
 def recommend_rooms(userId, top_k=10):
     print(f"\n[RECOMMEND] ===== STARTING RECOMMENDATIONS =====")
     print(f"[RECOMMEND] User ID: {userId}, Top K: {top_k}")
+
+    _refresh_runtime_data()
 
     # 1. Chạy thuật toán Lọc cộng tác bằng cách lấy trực tiếp dữ liệu RAM `interact_df`
     cf_scores_dict = calculate_collaborative_scores(interact_df, userId)
@@ -62,9 +130,7 @@ def recommend_rooms(userId, top_k=10):
             continue
         if room.get("allowPets") == False and user.get("accept_pets") == True:
             continue
-
         roomId = room["roomId"]
-        
         # 2. Lấy điểm Collaborative Filtering tương ứng của phòng (mặc định 0.5 nếu là Cold Start)
         cf_score = cf_scores_dict.get(roomId, 0.5)
         user_budget_min = _safe_float(user.get("budget_min_vnd"), 3000000)

@@ -16,6 +16,7 @@ import {
 import { Navigation } from '@/components/Navigation';
 import { Footer } from '@/components/Footer';
 import { useInteraction } from '@/lib/hooks/useInteraction';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 interface Room {
   id: string;
@@ -216,6 +217,7 @@ function PaginationControls({ page, totalPages, onPageChange }: PaginationContro
 }
 
 export default function RoomsPage() {
+  const { user } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -239,17 +241,8 @@ export default function RoomsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [queryReady, setQueryReady] = useState(false);
-  const [userId, setUserId] = useState<string | undefined>(undefined);
   const limit = 12;
   const totalPages = Math.max(1, Math.ceil(total / limit));
-
-  // Get userId from localStorage or session
-  useEffect(() => {
-    const storedUserId = localStorage.getItem('userId');
-    if (storedUserId) {
-      setUserId(storedUserId);
-    }
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -620,7 +613,7 @@ export default function RoomsPage() {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {rooms.map((room) => (
                     <Link key={room.id} href={`/rooms/${room.id}`} className="block">
-                      <RoomCard room={room} userId={userId} />
+                      <RoomCard room={room} userId={user?.id} />
                     </Link>
                   ))}
                 </div>

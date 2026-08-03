@@ -14,8 +14,6 @@ BINDINGS = [
     "preference.room-interaction.changed",
     "rental.occupancy-profile.changed",
 ]
-
-
 def _database_url():
     value = os.getenv("AI_DATABASE_URL", "").strip()
     if not value:

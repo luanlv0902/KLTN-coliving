@@ -43,7 +43,9 @@ export default function RecommendedRooms() {
     try {
       setLoading(true);
       setError("");
-      const response = await fetch("/api/recommendations/rooms?top_k=12");
+      const response = await fetch("/api/recommendations/rooms?top_k=12", {
+        cache: "no-store",
+      });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || "Lỗi khi tải recommendations");
