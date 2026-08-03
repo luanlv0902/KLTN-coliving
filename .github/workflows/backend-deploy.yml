@@ -83,32 +83,6 @@ jobs:
           sed -i 's/\r$//' /tmp/coliving-backend.env
           test -s /tmp/coliving-backend.env
 
-      - name: Test SSH connectivity
-        env:
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${EC2_USER}" ]; then
-            echo "::error::Missing GitHub secret EC2_USER. For Ubuntu EC2, this is usually ubuntu."
-            exit 1
-          fi
-
-          if [ -z "${EC2_HOST}" ]; then
-            echo "::error::Missing GitHub secret EC2_HOST."
-            exit 1
-          fi
-
-          ssh \
-            -i ~/.ssh/ec2_backend_key \
-            -o BatchMode=yes \
-            -o ConnectTimeout=15 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
-            "${EC2_USER}@${EC2_HOST}" \
-            'echo "SSH OK"; hostname; whoami'
-
       - name: Upload source and env to EC2
         env:
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -126,22 +100,9 @@ jobs:
             exit 1
           fi
 
-          upload_cmd() {
-            scp \
-              -i ~/.ssh/ec2_backend_key \
-              -o BatchMode=yes \
-              -o ConnectTimeout=15 \
-              -o ServerAliveInterval=30 \
-              -o ServerAliveCountMax=3 \
-              /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
-              "${EC2_USER}@${EC2_HOST}:/tmp/"
-          }
-
-          upload_cmd || {
-            echo "First SCP attempt failed; retrying once in 3 seconds..."
-            sleep 3
-            upload_cmd
-          }
+          scp -i ~/.ssh/ec2_backend_key \
+            /tmp/coliving-backend-source.tgz /tmp/coliving-backend.env \
+            "${EC2_USER}@${EC2_HOST}:/tmp/"
 
       - name: Deploy on EC2
         env:
@@ -160,13 +121,7 @@ jobs:
             exit 1
           fi
 
-          ssh \
-            -i ~/.ssh/ec2_backend_key \
-            -o BatchMode=yes \
-            -o ConnectTimeout=15 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
-            "${EC2_USER}@${EC2_HOST}" \
+          ssh -i ~/.ssh/ec2_backend_key "${EC2_USER}@${EC2_HOST}" \
             "REMOTE_APP_DIR='${REMOTE_APP_DIR}' \
              HEALTHCHECK_URL='${HEALTHCHECK_URL}' \
              bash -s" <<'REMOTE_SCRIPT'
