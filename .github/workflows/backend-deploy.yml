@@ -65,7 +65,12 @@ jobs:
           sed -i 's/\r$//' ~/.ssh/ec2_backend_key
           chmod 600 ~/.ssh/ec2_backend_key
 
-          ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null
+          if ! ssh-keygen -y -f ~/.ssh/ec2_backend_key >/dev/null 2>&1; then
+            echo "::error::ssh-keygen failed to parse EC2_SSH_PRIVATE_KEY. Ensure the secret contains the exact private key, including BEGIN/END lines, uses LF newlines, and is not passphrase-protected."
+            ssh-keygen -y -f ~/.ssh/ec2_backend_key 2>&1 | sed -n '1,100p' >&2 || true
+            exit 1
+          fi
+
           ssh-keyscan -T 10 -H "${EC2_HOST}" >> ~/.ssh/known_hosts
 
       - name: Prepare production env
