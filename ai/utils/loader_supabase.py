@@ -107,6 +107,18 @@ def load_service_rows(query_name: str):
             cursor.execute(query)
             return cursor.fetchall()
 
+
+def load_service_rows_live(query_name: str):
+    """Always query source service schemas, bypassing AI projections."""
+    database_url = os.getenv("AI_DATABASE_URL", os.getenv("DATABASE_URL", "")).strip()
+    if not database_url:
+        raise ValueError("AI_DATABASE_URL or DATABASE_URL is missing")
+    query = SERVICE_QUERIES[query_name]
+    with psycopg.connect(database_url, connect_timeout=10, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall()
+
 def load_users_from_supabase() -> pd.DataFrame:
     try:
         print("📥 Loading users from Supabase...")

@@ -599,7 +599,6 @@ export default function PreferenceQuestionnaire() {
                         { value: "Remote Worker", label: "Làm việc ở nhà", desc: "Cần không gian yên tĩnh" },
                         { value: "Social Butterfly", label: "Thích giao tiếp", desc: "Vui vẻ, thường có bạn" },
                         { value: "Student", label: "Sinh viên", desc: "Linh hoạt, ít ở nhà" },
-                        { value: "Young Professional", label: "Chuyên gia trẻ", desc: "Cân bằng giữa công việc & cuộc sống" },
                       ].map((option) => (
                         <button
                           key={option.value}

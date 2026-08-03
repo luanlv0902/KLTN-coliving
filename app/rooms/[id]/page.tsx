@@ -13,6 +13,7 @@ import { RoomGallery } from './components/RoomGallery';
 import { FavoriteButton } from './FavoriteButton';
 import { cookies } from 'next/headers';
 import RoomMapView from "@/components/maps/RoomMapView";
+import { RoomDetailInteractionLogger } from './RoomDetailInteractionLogger';
 type RoomDetail = PublicRoomDetail;
 type RoomOwner = NonNullable<RoomDetail['owner']>;
 type RoomAmenityItem = {
@@ -519,6 +520,7 @@ export default async function RoomDetailPage({
   return (
     <>
       <Navigation />
+      <RoomDetailInteractionLogger roomId={room.id} />
       <main className="bg-[#f9f9fe] pb-20 pt-24 text-slate-950">
         <header className="mx-auto mb-8 max-w-7xl px-8">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">

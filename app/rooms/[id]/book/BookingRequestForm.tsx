@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useInteraction } from '@/lib/hooks/useInteraction';
 
 type BookingRequestFormProps = {
   roomId: string;
@@ -45,6 +46,7 @@ function getBookingErrorMessage(message: unknown) {
 
 export function BookingRequestForm({ roomId, isRoomFull = false }: BookingRequestFormProps) {
   const { user, token, isLoading } = useAuth();
+  const { logApply } = useInteraction({ userId: user?.id, roomId });
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -103,6 +105,9 @@ export function BookingRequestForm({ roomId, isRoomFull = false }: BookingReques
         const firstFieldError = payload?.errors ? Object.values(payload.errors).flat().at(0) : null;
         throw new Error(getBookingErrorMessage(payload?.message || payload?.error || firstFieldError));
       }
+
+      // Log apply interaction when booking is successful
+      logApply();
 
       setMessage('Yêu cầu đặt phòng đã được gửi. Quản trị viên sẽ liên hệ để xác nhận chi tiết.');
       setMoveInDate(today);
