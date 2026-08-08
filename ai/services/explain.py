@@ -3,10 +3,6 @@
 # =====================================================
 
 def explain_recommendation(row):
-    """
-    Hàm giải thích lý do gợi ý phòng với văn phong mềm mại, tự nhiên như người thật,
-    tránh việc ghép nối chuỗi lủng củng và đồng bộ chuẩn cấu trúc Khóa luận tốt nghiệp.
-    """
     # 1. Xác định trạng thái tổng quan dựa trên điểm số (Hệ 100)
     final_score = row.get("recommendation_score", 0.5) * 100
     
