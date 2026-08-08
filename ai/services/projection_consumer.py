@@ -14,6 +14,12 @@ BINDINGS = [
     "preference.room-interaction.changed",
     "rental.occupancy-profile.changed",
 ]
+
+
+def sync_room_interactions_enabled() -> bool:
+    return os.getenv("AI_SYNC_ROOM_INTERACTIONS", "false").lower() == "true"
+
+
 def _database_url():
     value = os.getenv("AI_DATABASE_URL", "").strip()
     if not value:
@@ -22,10 +28,8 @@ def _database_url():
 
 
 def _upsert_event(cursor, event):
-    return False
     event_type = event.get("eventType")
     payload = event.get("payload") or {}
-
     if event_type == "identity.user.changed":
         cursor.execute('''
             INSERT INTO ai.user_profiles (user_id, email, full_name, role, source_updated_at)
@@ -60,13 +64,14 @@ def _upsert_event(cursor, event):
     elif event_type == "property.room.changed":
         cursor.execute('''
             INSERT INTO ai.room_profiles (
-              room_id, title, address, district, district_id, price_value, owner_id, status,
+                            room_id, title, address, district, district_id, latitude, longitude, price_value, owner_id, status,
               cleanliness_required, noise_tolerance, guest_policy, preferred_sleep_habit,
               max_occupants, current_occupants, allow_smoking, allow_pets, source_updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (room_id) DO UPDATE SET
               title = EXCLUDED.title, address = EXCLUDED.address, district = EXCLUDED.district,
-              district_id = EXCLUDED.district_id, price_value = EXCLUDED.price_value,
+                            district_id = EXCLUDED.district_id, latitude = EXCLUDED.latitude,
+                            longitude = EXCLUDED.longitude, price_value = EXCLUDED.price_value,
               owner_id = EXCLUDED.owner_id, status = EXCLUDED.status,
               cleanliness_required = EXCLUDED.cleanliness_required,
               noise_tolerance = EXCLUDED.noise_tolerance, guest_policy = EXCLUDED.guest_policy,
@@ -76,8 +81,9 @@ def _upsert_event(cursor, event):
               allow_smoking = EXCLUDED.allow_smoking, allow_pets = EXCLUDED.allow_pets,
               source_updated_at = EXCLUDED.source_updated_at, projected_at = now()
         ''', (payload.get("id"), payload.get("title"), payload.get("address"),
-              payload.get("district"), payload.get("districtId"), payload.get("priceValue"),
-              payload.get("ownerId"), payload.get("status"), payload.get("cleanlinessRequired"),
+                            payload.get("district"), payload.get("districtId"), payload.get("latitude"),
+                            payload.get("longitude"), payload.get("priceValue"), payload.get("ownerId"),
+                            payload.get("status"), payload.get("cleanlinessRequired"),
               payload.get("noiseTolerance"), payload.get("guestPolicy"),
               payload.get("preferredSleepHabit"), payload.get("maxOccupants"),
               payload.get("currentOccupants"), payload.get("allowSmoking"),
@@ -92,6 +98,8 @@ def _upsert_event(cursor, event):
         ''', (payload.get("roomId"), payload.get("userId"), payload.get("status"),
               payload.get("terminatedAt"), payload.get("joinedAt")))
     elif event_type == "preference.room-interaction.changed":
+        if not sync_room_interactions_enabled():
+            return
         cursor.execute('''
             INSERT INTO ai.room_interactions (
               interaction_id, user_id, room_id, interaction_type,
@@ -108,7 +116,6 @@ def _upsert_event(cursor, event):
 
 
 def process_event(event):
-    return False
     event_id = str(event.get("id") or "")
     if not event_id:
         raise ValueError("Projection event id is missing")

@@ -17,6 +17,7 @@ def database_url():
 def bootstrap():
     migration = Path(__file__).parents[1] / "migrations" / "0001_ai_projections.sql"
     reset_tables = os.getenv("AI_BOOTSTRAP_RESET_TABLES", "false").lower() == "true"
+    sync_room_interactions = os.getenv("AI_SYNC_ROOM_INTERACTIONS", "false").lower() == "true"
     with psycopg.connect(database_url(), connect_timeout=10) as connection:
         with connection.cursor() as cursor:
             if os.getenv("AI_PROVISION_SCHEMA", "false").lower() == "true":
@@ -28,8 +29,14 @@ def bootstrap():
                         "AI projection schema is missing; provision it with an admin connection before role cutover"
                     )
 
+            cursor.execute('ALTER TABLE ai.room_profiles ADD COLUMN IF NOT EXISTS latitude double precision')
+            cursor.execute('ALTER TABLE ai.room_profiles ADD COLUMN IF NOT EXISTS longitude double precision')
+
             if reset_tables:
-                cursor.execute("TRUNCATE ai.user_profiles, ai.room_profiles, ai.occupancy_profiles, ai.room_interactions")
+                truncate_tables = ["ai.user_profiles", "ai.room_profiles", "ai.occupancy_profiles"]
+                if sync_room_interactions:
+                    truncate_tables.append("ai.room_interactions")
+                cursor.execute("TRUNCATE " + ", ".join(truncate_tables))
             cursor.execute('''
                 INSERT INTO ai.user_profiles (
                   user_id, email, full_name, role, budget_min_vnd, budget_max_vnd,
@@ -47,12 +54,12 @@ def bootstrap():
             ''')
             cursor.execute('''
                 INSERT INTO ai.room_profiles (
-                  room_id, title, address, district, district_id, price_value, owner_id,
+                                    room_id, title, address, district, district_id, latitude, longitude, price_value, owner_id,
                   status, cleanliness_required, noise_tolerance, guest_policy,
                   preferred_sleep_habit, max_occupants, current_occupants,
                   allow_smoking, allow_pets, source_updated_at
                 )
-                SELECT "id", "title", "address", "district", "districtId", "priceValue",
+                                SELECT "id", "title", "address", "district", "districtId", "latitude", "longitude", "priceValue",
                        "ownerId", "status"::text, "cleanlinessRequired", "noiseTolerance",
                        "guestPolicy", "preferredSleepHabit", "maxOccupants",
                        "currentOccupants", "allowSmoking", "allowPets", "updatedAt"
@@ -65,15 +72,16 @@ def bootstrap():
                 SELECT "roomId", "userId", "status"::text, COALESCE("terminatedAt", "joinedAt")
                 FROM rental.occupancy
             ''')
-            cursor.execute('''
-                INSERT INTO ai.room_interactions (
-                  interaction_id, user_id, room_id, interaction_type,
-                  interaction_value, source_created_at
-                )
-                SELECT "id", "userId", "roomId", "interactionType"::text,
-                       "interactionValue", "createdAt"
-                FROM preference."RoomInteraction"
-            ''')
+                        if sync_room_interactions:
+                                cursor.execute('''
+                                        INSERT INTO ai.room_interactions (
+                                            interaction_id, user_id, room_id, interaction_type,
+                                            interaction_value, source_created_at
+                                        )
+                                        SELECT "id", "userId", "roomId", "interactionType"::text,
+                                                     "interactionValue", "createdAt"
+                                        FROM preference."RoomInteraction"
+                                ''')
 
             counts = {}
             for table in ("user_profiles", "room_profiles", "occupancy_profiles", "room_interactions"):

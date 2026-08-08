@@ -40,7 +40,7 @@ SERVICE_QUERIES = {
         FROM "preference"."user_preferences"
     ''',
     "rooms": '''
-        SELECT "id", "title", "address", "district", "districtId", "priceValue",
+        SELECT "id", "title", "address", "district", "districtId", "latitude", "longitude", "priceValue",
                "ownerId", "status", "cleanlinessRequired", "noiseTolerance",
                "guestPolicy", "preferredSleepHabit", "maxOccupants",
                "currentOccupants", "allowSmoking", "allowPets"
@@ -72,7 +72,8 @@ PROJECTION_QUERIES = {
         FROM ai.user_profiles
     ''',
     "rooms": '''
-        SELECT room_id AS "id", title, address, district, district_id AS "districtId",
+         SELECT room_id AS "id", title, address, district, district_id AS "districtId",
+             latitude AS "latitude", longitude AS "longitude",
                price_value AS "priceValue", owner_id AS "ownerId", status,
                cleanliness_required AS "cleanlinessRequired", noise_tolerance AS "noiseTolerance",
                guest_policy AS "guestPolicy", preferred_sleep_habit AS "preferredSleepHabit",
@@ -97,6 +98,38 @@ def use_service_schemas() -> bool:
 def use_ai_projections() -> bool:
     return os.getenv("AI_USE_PROJECTIONS", "false").lower() == "true"
 
+
+def get_projection_rooms_query(cursor) -> str:
+    cursor.execute(
+        '''
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'ai'
+          AND table_name = 'room_profiles'
+          AND column_name IN ('latitude', 'longitude')
+        '''
+    )
+    columns = set()
+    for row in cursor.fetchall():
+        if isinstance(row, dict):
+            columns.add(row.get("column_name"))
+        else:
+            columns.add(row[0])
+    columns.discard(None)
+    latitude_select = 'latitude AS "latitude"' if 'latitude' in columns else 'NULL::double precision AS "latitude"'
+    longitude_select = 'longitude AS "longitude"' if 'longitude' in columns else 'NULL::double precision AS "longitude"'
+
+    return f'''
+        SELECT room_id AS "id", title, address, district, district_id AS "districtId",
+               {latitude_select}, {longitude_select},
+               price_value AS "priceValue", owner_id AS "ownerId", status,
+               cleanliness_required AS "cleanlinessRequired", noise_tolerance AS "noiseTolerance",
+               guest_policy AS "guestPolicy", preferred_sleep_habit AS "preferredSleepHabit",
+               max_occupants AS "maxOccupants", current_occupants AS "currentOccupants",
+               allow_smoking AS "allowSmoking", allow_pets AS "allowPets"
+        FROM ai.room_profiles
+    '''
+
 def load_service_rows(query_name: str):
     database_url = os.getenv("AI_DATABASE_URL", os.getenv("DATABASE_URL", "")).strip()
     if not database_url:
@@ -104,6 +137,8 @@ def load_service_rows(query_name: str):
     query = PROJECTION_QUERIES[query_name] if use_ai_projections() else SERVICE_QUERIES[query_name]
     with psycopg.connect(database_url, connect_timeout=10, row_factory=dict_row) as connection:
         with connection.cursor() as cursor:
+            if use_ai_projections() and query_name == "rooms":
+                query = get_projection_rooms_query(cursor)
             cursor.execute(query)
             return cursor.fetchall()
 
@@ -225,6 +260,8 @@ def load_rooms_from_supabase() -> pd.DataFrame:
                 "address": room.get("address"),
                 "district": room.get("district", "all"),
                 "districtId": room.get("districtId", "all"),
+                "latitude": room.get("latitude"),
+                "longitude": room.get("longitude"),
                 "minimumBudget": room.get("priceValue", 5000000),
                 "cleanlinessRequired": room.get("cleanlinessRequired", "medium"),
                 "noiseTolerance": room.get("noiseTolerance") or "medium",

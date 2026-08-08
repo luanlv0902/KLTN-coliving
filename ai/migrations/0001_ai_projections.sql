@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS ai.room_profiles (
   address text,
   district text,
   district_id text,
+  latitude double precision,
+  longitude double precision,
   price_value numeric,
   owner_id text,
   status text,

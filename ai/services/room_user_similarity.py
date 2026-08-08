@@ -56,6 +56,26 @@ def ensure_column(df, column_name, aliases=None):
 def missing_columns(df, required_columns):
     return [column for column in required_columns if column not in df.columns]
 
+
+def _derive_preferred_coordinates(preferred_district, rooms_df: pd.DataFrame):
+    district = str(preferred_district or "").strip()
+    if not district or district.lower() == "all":
+        return None, None
+    if "districtId" not in rooms_df.columns:
+        return None, None
+
+    district_rooms = rooms_df[rooms_df["districtId"] == district]
+    if district_rooms.empty:
+        return None, None
+
+    lat_series = pd.to_numeric(district_rooms.get("latitude"), errors="coerce")
+    lng_series = pd.to_numeric(district_rooms.get("longitude"), errors="coerce")
+    valid_mask = lat_series.notna() & lng_series.notna()
+    if not valid_mask.any():
+        return None, None
+
+    return float(lat_series[valid_mask].median()), float(lng_series[valid_mask].median())
+
 def get_detailed_compatibility(userId: str, roomId: str):
     try:
         # 1. Load Data
@@ -109,9 +129,15 @@ def get_detailed_compatibility(userId: str, roomId: str):
                 "overall_score": 0
             }
 
+        preferred_district = user.get('preferred_location_district_id', 'all')
+        preferred_lat, preferred_lng = _derive_preferred_coordinates(preferred_district, rooms_df)
         location_score = location_similarity(
-            user.get('preferred_location_district_id', 'all'),
-            room.get('districtId')
+            preferred_district,
+            room.get('districtId'),
+            preferred_lat,
+            preferred_lng,
+            room.get('latitude'),
+            room.get('longitude'),
         )
 
         budget_score = budget_similarity(

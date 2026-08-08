@@ -203,7 +203,7 @@ projection_reconciliation = ProjectionReconciliationScheduler()
 @app.on_event("startup")
 def start_projection_consumer():
     projection_consumer.start()
-    if os.getenv("AI_ENABLE_RECONCILIATION_SCHEDULER", "false").lower() == "true":
+    if os.getenv("AI_ENABLE_RECONCILIATION_SCHEDULER", "true").lower() == "true":
         projection_reconciliation.start()
 
 @app.on_event("shutdown")

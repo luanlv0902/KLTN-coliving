@@ -5,6 +5,7 @@
 import math
 import random
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
@@ -35,8 +36,65 @@ def _to_float(value, default=0.0):
         return float(default)
 
 
-def location_similarity(user_loc, room_loc):
-    if not user_loc or not room_loc:
+def _to_optional_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_km = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * (math.sin(d_lambda / 2) ** 2)
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return radius_km * c
+
+
+def location_similarity(
+    user_loc,
+    room_loc,
+    user_lat=None,
+    user_lng=None,
+    room_lat=None,
+    room_lng=None,
+):
+    user_lat = _to_optional_float(user_lat)
+    user_lng = _to_optional_float(user_lng)
+    room_lat = _to_optional_float(room_lat)
+    room_lng = _to_optional_float(room_lng)
+
+    if user_lat is not None and user_lng is not None and room_lat is not None and room_lng is not None:
+        distance_km = _haversine_km(user_lat, user_lng, room_lat, room_lng)
+        similarity = math.exp(-distance_km / 7.0)
+
+        # Bonus nhẹ nếu cùng districtId để giữ ngữ nghĩa quận/huyện.
+        if user_loc and room_loc and user_loc == room_loc:
+            similarity += 0.05
+
+        similarity = max(
+            min(similarity, MAX_SIMILARITY),
+            MIN_SIMILARITY
+        )
+        return round(similarity, 4)
+
+    if not user_loc or str(user_loc).lower() == "all":
+        return 0.5
+    if not room_loc:
         return MIN_SIMILARITY
     if user_loc == room_loc:
         return 0.75

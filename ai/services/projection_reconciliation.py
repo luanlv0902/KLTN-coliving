@@ -14,10 +14,9 @@ def database_url():
 
 
 def reconcile_projections():
-    return {"status": "DISABLED", "reason": "Manually cutover to AI schema"}
-
     details = {}
-    reconcile_room_profiles = os.getenv("AI_RECONCILE_ROOM_PROFILES", "false").lower() == "true"
+    reconcile_room_profiles = os.getenv("AI_RECONCILE_ROOM_PROFILES", "true").lower() == "true"
+    sync_room_interactions = os.getenv("AI_SYNC_ROOM_INTERACTIONS", "false").lower() == "true"
     with psycopg.connect(database_url(), connect_timeout=10) as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT to_regclass('ai.projection_reconciliation_runs')")
@@ -73,18 +72,19 @@ def reconcile_projections():
             if reconcile_room_profiles:
                 cursor.execute('''
                     INSERT INTO ai.room_profiles (
-                      room_id, title, address, district, district_id, price_value, owner_id, status,
+                                            room_id, title, address, district, district_id, latitude, longitude, price_value, owner_id, status,
                       cleanliness_required, noise_tolerance, guest_policy, preferred_sleep_habit,
                       max_occupants, current_occupants, allow_smoking, allow_pets, source_updated_at
                     )
-                    SELECT "id", "title", "address", "district", "districtId", "priceValue",
+                                        SELECT "id", "title", "address", "district", "districtId", "latitude", "longitude", "priceValue",
                            "ownerId", "status"::text, "cleanlinessRequired", "noiseTolerance",
                            "guestPolicy", "preferredSleepHabit", "maxOccupants", "currentOccupants",
                            "allowSmoking", "allowPets", "updatedAt"
                     FROM property."Room"
                     ON CONFLICT (room_id) DO UPDATE SET
                       title = EXCLUDED.title, address = EXCLUDED.address, district = EXCLUDED.district,
-                      district_id = EXCLUDED.district_id, price_value = EXCLUDED.price_value,
+                                            district_id = EXCLUDED.district_id, latitude = EXCLUDED.latitude,
+                                            longitude = EXCLUDED.longitude, price_value = EXCLUDED.price_value,
                       owner_id = EXCLUDED.owner_id, status = EXCLUDED.status,
                       cleanliness_required = EXCLUDED.cleanliness_required,
                       noise_tolerance = EXCLUDED.noise_tolerance, guest_policy = EXCLUDED.guest_policy,
@@ -94,7 +94,8 @@ def reconcile_projections():
                       allow_smoking = EXCLUDED.allow_smoking, allow_pets = EXCLUDED.allow_pets,
                       source_updated_at = EXCLUDED.source_updated_at, projected_at = now()
                     WHERE (ai.room_profiles.title, ai.room_profiles.address,
-                           ai.room_profiles.district, ai.room_profiles.district_id,
+                              ai.room_profiles.district, ai.room_profiles.district_id,
+                              ai.room_profiles.latitude, ai.room_profiles.longitude,
                            ai.room_profiles.price_value, ai.room_profiles.owner_id,
                            ai.room_profiles.status, ai.room_profiles.cleanliness_required,
                            ai.room_profiles.noise_tolerance, ai.room_profiles.guest_policy,
@@ -103,7 +104,8 @@ def reconcile_projections():
                            ai.room_profiles.allow_pets, ai.room_profiles.source_updated_at)
                       IS DISTINCT FROM
                           (EXCLUDED.title, EXCLUDED.address, EXCLUDED.district,
-                           EXCLUDED.district_id, EXCLUDED.price_value, EXCLUDED.owner_id,
+                              EXCLUDED.district_id, EXCLUDED.latitude, EXCLUDED.longitude,
+                              EXCLUDED.price_value, EXCLUDED.owner_id,
                            EXCLUDED.status, EXCLUDED.cleanliness_required,
                            EXCLUDED.noise_tolerance, EXCLUDED.guest_policy,
                            EXCLUDED.preferred_sleep_habit, EXCLUDED.max_occupants,
@@ -136,33 +138,37 @@ def reconcile_projections():
             ''')
             details["occupancyDeleted"] = cursor.rowcount
 
-            cursor.execute('''
-                INSERT INTO ai.room_interactions (
-                  interaction_id, user_id, room_id, interaction_type,
-                  interaction_value, source_created_at
-                )
-                SELECT "id", "userId", "roomId", "interactionType"::text,
-                       "interactionValue", "createdAt"
-                FROM preference."RoomInteraction"
-                ON CONFLICT (interaction_id) DO UPDATE SET
-                  user_id = EXCLUDED.user_id, room_id = EXCLUDED.room_id,
-                  interaction_type = EXCLUDED.interaction_type,
-                  interaction_value = EXCLUDED.interaction_value,
-                  source_created_at = EXCLUDED.source_created_at, projected_at = now()
-                WHERE (ai.room_interactions.user_id, ai.room_interactions.room_id,
-                       ai.room_interactions.interaction_type, ai.room_interactions.interaction_value,
-                       ai.room_interactions.source_created_at)
-                  IS DISTINCT FROM
-                      (EXCLUDED.user_id, EXCLUDED.room_id, EXCLUDED.interaction_type,
-                       EXCLUDED.interaction_value, EXCLUDED.source_created_at)
-            ''')
-            details["interactionsUpserted"] = cursor.rowcount
-            cursor.execute('''
-                DELETE FROM ai.room_interactions p WHERE NOT EXISTS (
-                  SELECT 1 FROM preference."RoomInteraction" i WHERE i."id" = p.interaction_id
-                )
-            ''')
-            details["interactionsDeleted"] = cursor.rowcount
+            if sync_room_interactions:
+                cursor.execute('''
+                    INSERT INTO ai.room_interactions (
+                      interaction_id, user_id, room_id, interaction_type,
+                      interaction_value, source_created_at
+                    )
+                    SELECT "id", "userId", "roomId", "interactionType"::text,
+                           "interactionValue", "createdAt"
+                    FROM preference."RoomInteraction"
+                    ON CONFLICT (interaction_id) DO UPDATE SET
+                      user_id = EXCLUDED.user_id, room_id = EXCLUDED.room_id,
+                      interaction_type = EXCLUDED.interaction_type,
+                      interaction_value = EXCLUDED.interaction_value,
+                      source_created_at = EXCLUDED.source_created_at, projected_at = now()
+                    WHERE (ai.room_interactions.user_id, ai.room_interactions.room_id,
+                           ai.room_interactions.interaction_type, ai.room_interactions.interaction_value,
+                           ai.room_interactions.source_created_at)
+                      IS DISTINCT FROM
+                          (EXCLUDED.user_id, EXCLUDED.room_id, EXCLUDED.interaction_type,
+                           EXCLUDED.interaction_value, EXCLUDED.source_created_at)
+                ''')
+                details["interactionsUpserted"] = cursor.rowcount
+                cursor.execute('''
+                    DELETE FROM ai.room_interactions p WHERE NOT EXISTS (
+                      SELECT 1 FROM preference."RoomInteraction" i WHERE i."id" = p.interaction_id
+                    )
+                ''')
+                details["interactionsDeleted"] = cursor.rowcount
+            else:
+                details["interactionsUpserted"] = 0
+                details["interactionsDeleted"] = 0
 
             cursor.execute('''
                 UPDATE ai.projection_reconciliation_runs
@@ -212,7 +218,7 @@ class ProjectionReconciliationScheduler:
             print(f"[AI] Projection reconciliation failed: {error}")
 
     def _run(self, interval):
-        if os.getenv("AI_RECONCILIATION_RUN_ON_START", "false").lower() == "true":
+        if os.getenv("AI_RECONCILIATION_RUN_ON_START", "true").lower() == "true":
             self._run_once()
         while not self.stop_event.wait(interval):
             self._run_once()
